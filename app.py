@@ -1,11 +1,8 @@
-from flask import Flask, render_template, request, jsonify
+import streamlit as st
 import numpy as np
 import joblib
 
-# Initialize Flask app
-app = Flask(__name__)
-
-# Load your trained earthquake model
+# Load trained earthquake model and scaler
 model = joblib.load('earthquake_model.pkl')  # Ensure this file exists in the same folder
 scaler = joblib.load('scaler.pkl')
 
@@ -17,40 +14,60 @@ likelihood_mapping = {
     3: "Highly Likely"
 }
 
-# Home route
-@app.route('/')
-def home():
-    return render_template('index.html')
+# Streamlit App
+st.set_page_config(page_title="Earthquake Likelihood Predictor", page_icon="🌍", layout="centered")
+st.title("🌍 Earthquake Likelihood Prediction App")
 
-# Route for form-based prediction
-@app.route('/predict', methods=['POST'])
-def predict():
+st.write("""
+This app predicts the **likelihood of an earthquake** based on key seismic parameters.
+Enter the required values below and click **Predict**.
+""")
+
+# Input fields for user data
+with st.form("prediction_form"):
+    magnitude = st.number_input("Magnitude (e.g., 5.5)", min_value=0.0, step=0.1)
+    depth = st.number_input("Depth (km)", min_value=0.0, step=1.0)
+    cdi = st.number_input("CDI (Community Determined Intensity)", min_value=0.0, step=0.1)
+    mmi = st.number_input("MMI (Modified Mercalli Intensity)", min_value=0.0, step=0.1)
+    sig = st.number_input("Significance", min_value=0.0, step=1.0)
+
+    submitted = st.form_submit_button("Predict")
+
+# Handle prediction
+if submitted:
     try:
-        # Retrieve form data (convert each to float)
-        magnitude = float(request.form['magnitude'])
-        depth = float(request.form['depth'])
-        cdi = float(request.form['cdi'])
-        mmi = float(request.form['mmi'])
-        sig = float(request.form['sig'])
-
-        # Combine features into a numpy array for model input
+        # Prepare data for model
         input_data = np.array([[magnitude, depth, cdi, mmi, sig]])
+        scaled_data = scaler.transform(input_data)
 
-        # Predict with trained model
-        prediction = model.predict(input_data)[0]
+        # Predict with model
+        prediction = model.predict(scaled_data)[0]
         likelihood = likelihood_mapping.get(prediction, "Unknown")
 
-        # Return result to frontend
-        return render_template('index.html', prediction_text=f"Earthquake Likelihood: {likelihood}")
+        st.success(f"### 🌋 Earthquake Likelihood: **{likelihood}**")
 
     except Exception as e:
-        return render_template('index.html', prediction_text=f"Error: {str(e)}")
+        st.error(f"Error during prediction: {str(e)}")
 
-# JSON API endpoint
-@app.route('/api/predict', methods=['POST'])
-def api_predict():
+# Optional JSON API simulation
+st.divider()
+st.subheader("🔧 JSON Input (API Simulation)")
+st.write("You can simulate API input here by entering raw JSON data:")
+
+sample_json = {
+    "magnitude": 5.5,
+    "depth": 10.0,
+    "cdi": 3.2,
+    "mmi": 4.1,
+    "sig": 120
+}
+
+user_json = st.text_area("Enter JSON data:", value=str(sample_json))
+
+if st.button("Predict from JSON"):
     try:
-        data = request.get_json(force=True)
+        import ast
+        data = ast.literal_eval(user_json)
         features = [
             data['magnitude'],
             data['depth'],
@@ -58,15 +75,13 @@ def api_predict():
             data['mmi'],
             data['sig']
         ]
-
         input_data = np.array([features])
-        prediction = model.predict(input_data)[0]
+        scaled_data = scaler.transform(input_data)
+        prediction = model.predict(scaled_data)[0]
         likelihood = likelihood_mapping.get(prediction, "Unknown")
-
-        return jsonify({'prediction': likelihood})
+        st.info(f"### 🧭 Prediction from JSON: **{likelihood}**")
 
     except Exception as e:
-        return jsonify({'error': str(e)})
+        st.error(f"Invalid JSON or Prediction Error: {str(e)}")
 
-if __name__ == '__main__':
-    app.run(debug=True)
+
